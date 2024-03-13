@@ -2,6 +2,9 @@ package com.sma.oauth2.backend.controller;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sma.oauth2.backend.dto.DataResult;
+import com.sma.oauth2.backend.dto.Operation;
+import com.sma.oauth2.backend.dto.SearchValues;
 import com.sma.oauth2.backend.dto.UserProfile;
 import com.sma.oauth2.backend.utils.CookieUtils;
 import lombok.RequiredArgsConstructor;
@@ -13,6 +16,7 @@ import org.springframework.http.*;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
@@ -24,7 +28,7 @@ import static com.sma.oauth2.backend.model.Constants.*;
 
 @Slf4j
 @RestController
-@RequestMapping("/bff") // базовый URI
+@RequestMapping("/bff")
 @RequiredArgsConstructor
 public class BFFController {
     private final CookieUtils cookieUtils;
@@ -52,13 +56,32 @@ public class BFFController {
     private int accessTokenDuration;
     private int refreshTokenDuration;
 
-
-    @GetMapping("/data")
-    public ResponseEntity<String> data(@CookieValue("AT") String accessToken) {
+    @PostMapping("/operation")
+    public ResponseEntity<Object> operation(@RequestBody Operation operation, @CookieValue("AT") String accessToken) {
         var headers = new HttpHeaders();
         headers.setBearerAuth(accessToken);
-        var request = new HttpEntity<>(headers);
-        return restTemplate.exchange(resourceServerURL + "/user/data", HttpMethod.GET, request, String.class);
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        var request = operation.body() == null
+                ? new HttpEntity<>(headers)
+                : new HttpEntity<>(operation.body(), headers);
+        try {
+            return restTemplate.exchange(operation.url(), operation.httpMethod(), request, Object.class);
+        } catch (HttpClientErrorException e) {
+            log.error(e.getMessage());
+            return new ResponseEntity<>(e.getResponseBodyAsString(), HttpStatus.BAD_REQUEST);
+        } catch (Exception e) {
+            log.error(e.getMessage());
+            return new ResponseEntity<>(e.getMessage(), HttpStatus.SERVICE_UNAVAILABLE);
+        }
+    }
+
+    @PostMapping("/data")
+    public ResponseEntity<DataResult> data(@CookieValue("AT") String accessToken, @RequestBody SearchValues searchValues) {
+        var headers = new HttpHeaders();
+        headers.setBearerAuth(accessToken);
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        var request = new HttpEntity<>(searchValues, headers);
+        return restTemplate.exchange(resourceServerURL + "/user/data", HttpMethod.POST, request, DataResult.class);
     }
 
     @PostMapping("/token")
@@ -67,7 +90,7 @@ public class BFFController {
         var response = restTemplate
                 .exchange(keyCloakURI + "/token", HttpMethod.POST, request, String.class);
         try {
-            parseResponse(response); // получить все нужные поля ответа KC
+            parseResponse(response);
             var responseHeaders = createCookies();
             return ResponseEntity.ok().headers(responseHeaders).build();
         } catch (JsonProcessingException | JSONException e) {
@@ -108,7 +131,7 @@ public class BFFController {
     @GetMapping("/logout")
     public ResponseEntity<String> logout(@CookieValue("IT") String idToken) {
         var urlTemplate = UriComponentsBuilder.fromHttpUrl(keyCloakURI + "/logout")
-                .queryParam(POST_LOGOUT_REDIRECT_URI, "{post_logout_redirect_uri}")
+//                .queryParam(POST_LOGOUT_REDIRECT_URI, "{post_logout_redirect_uri}")
                 .queryParam(ID_TOKEN_HINT, "{id_token_hint}")
                 .queryParam(CLIENT_ID, "{client_id}")
                 .encode()
@@ -180,7 +203,7 @@ public class BFFController {
         try {
             return payload.getString(claim);
         } catch (JSONException e) {
-            throw new RuntimeException(e);
+            return e.getMessage();
         }
     }
 
@@ -194,11 +217,9 @@ public class BFFController {
         accessTokenDuration = root.get("expires_in").asInt();
         refreshTokenDuration = root.get("refresh_expires_in").asInt();
 
-        var payloadPart = idToken.split("\\.")[1]; // берем значение раздела payload в формате Base64
-        var payloadStr = new String(Base64.getUrlDecoder().decode(payloadPart)); // декодируем из Base64 в обычный текст JSON
-        payload = new JSONObject(payloadStr); // формируем удобный формат JSON - из него теперь можно получать любе поля
+        var payloadPart = idToken.split("\\.")[1];
+        var payloadStr = new String(Base64.getUrlDecoder().decode(payloadPart));
+        payload = new JSONObject(payloadStr);
     }
-
-
 }
 
