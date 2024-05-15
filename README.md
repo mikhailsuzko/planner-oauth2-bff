@@ -1,6 +1,7 @@
-# js-oauth2-bff
+# planner-oauth2-bff
 This service implements the Backend for frontend (BFF) pattern. It receives requests from the frontend application and forwards them to the backend. It also returns a token to the client, performs token refresh operations, and generates the necessary cookies.
 
+# Project description
 This is the "Task Planner" project. The source code for this project is hosted in 4 repositories. The application uses
 oauth2 authorization using keycloak. There is a possibility of authorization by login and password, as well as using a
 Google account.
